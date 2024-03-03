@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -42,6 +43,13 @@ func main() {
 
 		if err := s.Render(); err != nil {
 			fmt.Println("error occured while rendering:", err)
+			switch {
+			case errors.Is(err, errors.New("Surface timed out")):
+			case errors.Is(err, errors.New("Surface is outdated")):
+			case errors.Is(err, errors.New("Surface was lost")):
+			default:
+				// panic(err)
+			}
 		}
 	}
 }
@@ -114,9 +122,18 @@ func (s *State) Render() error {
 		return err
 	}
 	defer commandEncoder.Release()
+	renderPass := commandEncoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+		ColorAttachments: []wgpu.RenderPassColorAttachment{
+			{
+				View:    nextTexture,
+				LoadOp:  wgpu.LoadOp_Load,
+				StoreOp: wgpu.StoreOp_Store,
+			},
+		},
+	})
+	defer renderPass.Release()
 
-	computePass := commandEncoder.BeginComputePass(nil)
-	defer computePass.Release()
+	renderPass.End()
 
 	cmdBuffer, err := commandEncoder.Finish(nil)
 	if err != nil {

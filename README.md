@@ -292,11 +292,41 @@ if err != nil {
 }
 defer commandEncoder.Release()
 ```
-
-
 We need to use the encoder to create a RenderPass. The RenderPass has all the methods for the actual drawing
 
 ```go 
-computePass := commandEncoder.BeginComputePass(nil)
-defer computePass.Release()
+renderPass := commandEncoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+  ColorAttachments: []wgpu.RenderPassColorAttachment{
+    {
+      View:    nextTexture,
+      LoadOp:  wgpu.LoadOp_Clear,
+      StoreOp: wgpu.StoreOp_Store,
+      ClearValue: wgpu.Color{
+        R: 0.0,
+        G: 0.01,
+        B: 0.05,
+        A: 1.0,
+      },
+    },
+  },
+})
+```
+
+Also, modify the loop 
+
+```go
+for !window.ShouldClose() {
+  glfw.PollEvents()
+
+  if err := s.Render(); err != nil {
+    fmt.Println("error occured while rendering:", err)
+     switch {
+     case errors.Is(err, errors.New("Surface timed out")):
+     case errors.Is(err, errors.New("Surface is outdated")):
+     case errors.Is(err, errors.New("Surface was lost")):
+     default:
+     // do nothing (for now)
+     }
+  }
+}
 ```
