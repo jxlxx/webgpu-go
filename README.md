@@ -89,6 +89,29 @@ func CreateWindow(width, height int, title string, monitor *Monitor, share *Wind
 - SwapBuffers swaps the front and back buffers of the window. If the swap interval is greater than zero, the GPU driver waits the specified number of screen updates before swapping the buffers. 
 - PollEvents processes only those events that have already been received and then returns immediately. Processing events will cause the window and input callbacks associated with those events to be called. Can only be called from the main thread.
 
+## Swapchain
+
+In computer graphics, a swap chain (also swapchain) is a series of virtual 
+framebuffers used by the graphics card and graphics API for frame rate 
+stabilization, stutter reduction, and several other purposes. 
+- Because of these benefits, many graphics APIs require the use of a swap chain. 
+- The swap chain usually exists in graphics memory, but it can exist in system 
+memory as well. 
+- A swap chain with two buffers is a double buffer. 
+
+- In every swap chain there are at least two buffers. 
+- The first framebuffer, the screenbuffer, is the buffer that is rendered to 
+the output of the video card. 
+- The remaining buffers are known as backbuffers. 
+- Each time a new frame is displayed, the first backbuffer in the swap chain 
+takes the place of the screenbuffer, this is called presentation or swapping 
+or flipping.
+
+- A variety of other actions may be taken on the previous screenbuffer and other 
+backbuffers (if they exist). 
+- The screenbuffer may be simply overwritten or returned to the back of the 
+swap chain for further processing. 
+- The action taken is decided by the client application and is API dependent. 
 
 # 2. hints and destroy window
 
