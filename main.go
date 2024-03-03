@@ -16,10 +16,12 @@ func main() {
 	}
 	defer glfw.Terminate()
 
+	glfw.WindowHint(glfw.ClientAPI, glfw.NoAPI)
 	window, err := glfw.CreateWindow(640, 480, "Testing", nil, nil)
 	if err != nil {
 		panic(err)
 	}
+	defer window.Destroy()
 
 	window.MakeContextCurrent()
 

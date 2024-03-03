@@ -7,7 +7,10 @@ On Linux needed to install:
 - libgl1-mesa-dev
 
 
-# Open a Window
+# 1. open a window
+
+- this is taken from the readme in [go-gl/glfw](https://github.com/go-gl/glfw)
+
 - this is using Go bindings for GLFW 3 
 
 - GLFW is a small C library that allows the creation and management of windows
@@ -85,3 +88,19 @@ func CreateWindow(width, height int, title string, monitor *Monitor, share *Wind
 
 - SwapBuffers swaps the front and back buffers of the window. If the swap interval is greater than zero, the GPU driver waits the specified number of screen updates before swapping the buffers. 
 - PollEvents processes only those events that have already been received and then returns immediately. Processing events will cause the window and input callbacks associated with those events to be called. Can only be called from the main thread.
+
+
+# 2. hints and destroy window
+
+```go
+glfw.WindowHint(glfw.ClientAPI, glfw.NoAPI)
+window, err := glfw.CreateWindow(640, 480, "Testing", nil, nil)
+if err != nil {
+  panic(err)
+}
+defer window.Destroy()
+```
+
+- WindowHint sets hints for the next call to CreateWindow. The hints, once set, retain their values until changed by a call to WindowHint or DefaultWindowHints, or until the library is terminated with Terminate. 
+- Destroy destroys the window
+
