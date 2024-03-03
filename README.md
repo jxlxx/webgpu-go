@@ -104,3 +104,53 @@ defer window.Destroy()
 - WindowHint sets hints for the next call to CreateWindow. The hints, once set, retain their values until changed by a call to WindowHint or DefaultWindowHints, or until the library is terminated with Terminate. 
 - Destroy destroys the window
 
+
+## 3. State, Render, Resize, & Destroy
+
+create the following:
+
+```go
+
+type State struct {
+}
+
+func InitState(window *glfw.Window) (s *State, err error) { 
+  return nil, nil
+}
+
+func (s *State) Resize(width, height int) {
+
+}
+
+func (s *State) Render() error {
+  return nil
+}
+
+func (s *State) Destroy() {
+
+}
+```
+
+update main: 
+```go
+s, err := InitState(window)
+if err != nil {
+  panic(err)
+}
+defer s.Destroy()
+
+window.SetSizeCallback(func(w *glfw.Window, width, height int) {
+  s.Resize(width, height)
+})
+
+for !window.ShouldClose() {
+  glfw.PollEvents()
+
+  if err := s.Render(); err != nil {
+  	fmt.Println("error occured while rendering:", err)
+  }
+}
+```
+
+
+
