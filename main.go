@@ -108,7 +108,19 @@ func InitState(window *glfw.Window) (s *State, err error) {
 }
 
 func (s *State) Resize(width, height int) {
+	if width > 0 && height > 0 {
+		s.config.Width = uint32(width)
+		s.config.Height = uint32(height)
 
+		if s.swapChain != nil {
+			s.swapChain.Release()
+		}
+		var err error
+		s.swapChain, err = s.device.CreateSwapChain(s.surface, s.config)
+		if err != nil {
+			panic(err)
+		}
+	}
 }
 
 func (s *State) Render() error {
