@@ -176,7 +176,7 @@ for !window.ShouldClose() {
 ```
 
 
-## Juicy part
+# Juicy part
 
 ```go
 type State struct {
@@ -330,3 +330,275 @@ for !window.ShouldClose() {
   }
 }
 ```
+
+
+
+# Triangles, Shaders & Pipelines
+
+Your GPU really only deals with a few different types of shapes 
+(or primitives as they're referred to by WebGPU): points, lines, and triangles
+
+GPUs work almost exclusively with triangles because triangles have a lot of nice 
+mathematical properties that make them easy to process in a predictable and 
+efficient way
+
+GPUs rely on small programs called vertex shaders to perform whatever math is 
+necessary to transform the vertices into clip space, 
+as well as any other calculations needed to draw the vertices.
+
+From there, the GPU takes all the triangles made up by these transformed 
+vertices and determines which pixels on the screen are needed to draw them. 
+Then it runs another small program you write called a fragment shader that 
+calculates what color each pixel should be.
+
+- https://kenny-designs.github.io/zim-websites/opengl/Shaders_and_the_Rendering_Pipeline.html
+
+Shaders are a part of the rendering pipeline that we can make changes to. 
+The rendering pipeline is a series of stages that take place in order to 
+render an image to the screen. Four of these stages are programmable via shaders.
+
+There are 9 parts but some people may split the stages into more or less categories. This following list will do:
+- Vertex Specification
+- Vertex Shader (programmable)
+- Tessellation (programmable)
+- Geometry Shader (programmable)
+- Vertex Post-Processing
+  - This is the end of all the vertex operations
+- Primitive Assembly
+  - Handles groups of vertices
+- Rasterization
+  - The conversion to fragments
+- Fragment Shader (programmable)
+- Per-Sample Operations
+  - Operations performed on the fragments before being rendered to the screen
+
+first, we'll define vertices in go:
+
+```go
+vertexData := [...]float32{
+  // X, Y,
+  -0.8, -0.8, // Triangle 1 
+  0.8, -0.8,
+  0.8, 0.8,
+  -0.8, -0.8, // Triangle 2 
+  0.8, 0.8,
+  -0.8, 0.8,
+}
+```
+
+The first thing to notice is that you give the buffer a label. 
+Every single WebGPU object you create can be given an optional label, 
+and you definitely want to do so! The label is any string you want, as 
+long as it helps you identify what the object is. If you run into any 
+problems, those labels are used in the error messages WebGPU produces 
+to help you understand what went wrong.
+
+Next, give a size for the buffer in bytes. You need a buffer with 48 bytes, 
+which you determine by multiplying the size of a 32-bit float ( 4 bytes) 
+by the number of floats in your vertices array (12).
+
+Finally, you need to specify the usage of the buffer. 
+This is one or more of the GPUBufferUsage flags, with multiple flags 
+being combined with the | ( bitwise OR) operator. In this case, you 
+specify that you want the buffer to be used for vertex data (GPUBufferUsage.VERTEX) 
+and that you also want to be able to copy data into it (GPUBufferUsage.COPY_DST).
+
+```go
+vertexBuffer, err := s.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+  Label:    "Cell Vertices",
+  Contents: wgpu.ToBytes(vertexData[:]),
+  Usage:    wgpu.BufferUsage_Vertex | wgpu.BufferUsage_CopyDst,
+})
+if err != nil {
+  return s, err
+}
+defer vertexBuffer.Release()
+```
+
+Shaders are mini-programs that you send to the GPU to perform operations 
+on your data. There are three main types of shaders: 
+vertex, fragment, and compute.
+
+Shaders in WebGPU are written in a shading language called WGSL 
+(WebGPU Shading Language). 
+
+WGSL is, syntactically, a bit like Rust, with features aimed at 
+making common types of GPU work (like vector and matrix math) 
+easier and faster.
+
+A vertex shader must return at least the final
+position of the vertex being processed in clip space.
+This is always given as a 4-dimensional vector. 
+
+```glsl
+@vertex
+fn vertexMain() -> @builtin(pos) vec4<f32> {
+}  
+```
+
+What you want instead is to make use of the data from the buffer that you created, 
+and you do that by declaring an argument for your function with a @location() a
+ttribute and type that match what you described in the vertexBufferLayout. 
+
+You specified a shaderLocation of 0, so in your WGSL code, mark the argument 
+with @location(0). You also defined the format as a float32x2, which is a 2D 
+vector, so in WGSL your argument is a vec2f. You can name it whatever you like, 
+but since these represent your vertex positions, a name like pos seems natural.
+
+```glsl
+@vertex
+fn vertexMain(@location(0) pos: vec2f) -> @builtin(position) vec4<f32> {
+  return vec4<f32>(0, 0, 0, 1);
+}
+```
+
+Next up is the fragment shader. Fragment shaders operate in a very similar 
+way to vertex shaders, but rather than being invoked for every vertex, 
+they're invoked for every pixel being drawn.
+
+Fragment shaders are always called after vertex shaders. The GPU takes 
+the output of the vertex shaders and triangulates it, creating triangles 
+out of sets of three points. It then rasterizes each of those triangles by 
+figuring out which pixels of the output color attachments are included in 
+that triangle, and then calls the fragment shader once for each of those 
+pixels. The fragment shader returns a color, typically calculated from 
+values sent to it from the vertex shader and assets like textures, which 
+the GPU writes to the color attachment.
+
+Final draw.wgsl:
+
+```glsl
+@vertex
+fn vertexMain(@location(0) pos: vec2<f32>) -> 
+    @builtin(position) vec4<f32>{
+    return vec4<f32>(pos, 0.0, 1.0);
+}
+
+@fragment
+fn fragmentMain() -> @location(0) vec4<f32> {
+    return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+}
+```
+
+Next create the shader:
+
+```go
+drawShader, err := s.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+  Label: "draw.wgsl",
+  WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{
+  	Code: draw,
+  },
+})
+if err != nil {
+  return s, err
+}
+defer drawShader.Release()
+```
+Defining the vertex layout:
+
+```go
+bufferLayouts := []wgpu.VertexBufferLayout{
+  {
+  	ArrayStride: 8,
+  	StepMode:    wgpu.VertexStepMode_Vertex,
+  	Attributes: []wgpu.VertexAttribute{
+  		{
+  			Format:         wgpu.VertexFormat_Float32x2,
+  			Offset:         0,
+  			ShaderLocation: 0,
+  		},
+  	},
+  },
+}
+```
+
+The first thing you give is the arrayStride. This is the number of bytes the 
+GPU needs to skip forward in the buffer when it's looking for the next vertex.
+
+Next is the attributes property, which is an array. 
+Attributes are the individual pieces of information encoded into each vertex.
+We just have position for now, but more advanced applications could have more
+(for example velocity).
+
+In your single attribute, you first define the format of the data. 
+This comes from a list of GPUVertexFormat types that describe each 
+type of vertex data that the GPU can understand.
+
+If the vertex data was instead made up of four 16-bit unsigned integers 
+each, you'd use uint16x4, etc.
+
+Next, the offset describes how many bytes into the vertex this particular 
+attribute starts. You really only have to worry about this if your buffer 
+has more than one attribute in it.
+
+Finally, you have the shaderLocation. This is an arbitrary number between
+0 and 15 and must be unique for every attribute that you define.
+
+Now create the render pipeline.
+
+The render pipeline is the most complex object in the entire API, 
+but ost of the values you can pass to it are optional, and you 
+only need to provide a few to start.
+
+```go
+s.pipeline, err = s.device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+  Vertex: wgpu.VertexState{
+  	Module:     drawShader,
+  	EntryPoint: "vertexMain",
+  	Buffers:    bufferLayouts,
+  },
+  Fragment: &wgpu.FragmentState{
+  	Module:     drawShader,
+  	EntryPoint: "fragmentMain",
+  	Targets: []wgpu.ColorTargetState{
+  		{
+  			Format:    s.config.Format,
+        Blend:     &wgpu.BlendState_Replace,
+  			WriteMask: wgpu.ColorWriteMask_All,
+  		},
+  	},
+  },
+  Primitive: wgpu.PrimitiveState{
+  	Topology:  wgpu.PrimitiveTopology_TriangleList,
+  	FrontFace: wgpu.FrontFace_CCW,
+  },
+  Multisample: wgpu.MultisampleState{
+  	Count:                  1,
+  	Mask:                   0xFFFFFFFF,
+  	AlphaToCoverageEnabled: false,
+  },
+})
+if err != nil {
+  return s, err
+}
+```
+
+Every pipeline needs a layout that describes what types of inputs 
+(other than vertex buffers) the pipeline needs, which we don't have. 
+
+So we don't have to set it and the pipeline builds its own layout from the shaders.
+
+Next, you have to provide details about the vertex stage. The module is the
+GPUShaderModule that contains your vertex shader, and the entryPoint gives 
+the name of the function in the shader code that is called for every vertex 
+invocation.
+
+And now render a square:
+
+```go
+defer renderPass.Release()
+
+renderPass.SetPipeline(s.pipeline)
+renderPass.SetVertexBuffer(0, s.vertexBuffer, 0, wgpu.WholeSize)
+renderPass.Draw(6, 1, 0, 0)
+
+renderPass.End()
+```
+
+
+# Appendix 
+
+## clip space
+
+- [clip space](https://www.scratchapixel.com/lessons/3d-basic-rendering/perspective-and-orthographic-projection-matrix/projection-matrix-GPU-rendering-pipeline-clipping.html)
+- [clip coordinates](https://en.wikipedia.org/wiki/Clip_coordinates)
