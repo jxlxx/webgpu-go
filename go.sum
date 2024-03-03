@@ -1,2 +1,6 @@
 github.com/go-gl/glfw/v3.3/glfw v0.0.0-20240118000515-a250818d05e3 h1:nanQfMsOs3gnuKRm0E5jXWomedE/9YIFXdmHJNZYeqc=
 github.com/go-gl/glfw/v3.3/glfw v0.0.0-20240118000515-a250818d05e3/go.mod h1:tQ2UAYgL5IevRw8kRxooKSPJfGvJ9fJQFa0TUsXzTg8=
+github.com/rajveermalviya/go-webgpu/wgpu v0.17.1 h1:BlPsyVdDfTdDh50nZypBH5Qu+on03AJgiRs0Lt7TFaI=
+github.com/rajveermalviya/go-webgpu/wgpu v0.17.1/go.mod h1:fr08XXRX3QNhQW6ylg9ihJl3NXFU0oMuqOglGpSgSJo=
+github.com/rajveermalviya/go-webgpu/wgpuext/glfw v0.1.1 h1:4K8d7OqHe7SLqyVDJBVb7ig6IvmnLA8pyb+DFMLKL6E=
+github.com/rajveermalviya/go-webgpu/wgpuext/glfw v0.1.1/go.mod h1:ot0RxM94jKRVgXnL7K42Wqmj2qgnnuh2461cP+L0LDM=

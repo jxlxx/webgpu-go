@@ -176,4 +176,127 @@ for !window.ShouldClose() {
 ```
 
 
+## Juicy part
 
+```go
+type State struct {
+  surface   *wgpu.Surface
+  swapChain *wgpu.SwapChain
+  device    *wgpu.Device
+  queue     *wgpu.Queue
+  config    *wgpu.SwapChainDescriptor
+}
+```
+
+```go
+func InitState(window *glfw.Window) (s *State, err error) {
+  s = &State{}
+
+  instance := wgpu.CreateInstance(nil)
+  defer instance.Release()
+
+  s.surface = instance.CreateSurface(wgpuext_glfw.GetSurfaceDescriptor(window))
+
+  adapter, err := instance.RequestAdapter(&wgpu.RequestAdapterOptions{
+  	ForceFallbackAdapter: forceFallbackAdapter,
+  	CompatibleSurface:    s.surface,
+  })
+  if err != nil {
+  	return s, err
+  }
+  defer adapter.Release()
+
+  s.device, err = adapter.RequestDevice(nil)
+  if err != nil {
+  	return s, err
+  }
+  s.queue = s.device.GetQueue()
+
+  caps := s.surface.GetCapabilities(adapter)
+
+  width, height := window.GetSize()
+  s.config = &wgpu.SwapChainDescriptor{
+  	Usage:       wgpu.TextureUsage_RenderAttachment,
+  	Format:      caps.Formats[0],
+  	Width:       uint32(width),
+  	Height:      uint32(height),
+  	PresentMode: wgpu.PresentMode_Fifo,
+  	AlphaMode:   caps.AlphaModes[0],
+  }
+
+  s.swapChain, err = s.device.CreateSwapChain(s.surface, s.config)
+  if err != nil {
+  	return s, err
+  }
+
+  return s, nil
+}
+```
+
+- The instance is the first thing you create when using wgpu. 
+Its main purpose is to create Adapters and Surfaces.
+
+- You can think of an adapter as WebGPU's representation of a specific piece of GPU hardware in your device.
+- Get the adapter with: `func (p *Instance) RequestAdapter(options *RequestAdapterOptions) (*Adapter, error)`
+
+```go
+type RequestAdapterOptions struct {
+  CompatibleSurface    *Surface
+  PowerPreference      PowerPreference
+  ForceFallbackAdapter bool
+  BackendType          BackendType
+}
+```
+
+- The `force_fallback_adapter` forces wgpu to pick an adapter that will work on all hardware. 
+This usually means that the rendering backend will use a "software" system instead of hardware such as a GPU.
+
+- The surface is the part of the window that we draw to. 
+
+- The usage field describes how SurfaceTextures will be used. 
+- RENDER_ATTACHMENT specifies that the textures will be used to write to the screen 
+
+- The format defines how SurfaceTextures will be stored on the GPU. 
+
+- width and height are the width and the height in pixels of a SurfaceTexture. 
+This should usually be the width and the height of the window.
+
+- present_mode determines how to sync the surface with the display. 
+-PresentMode_Fifo will cap the display rate at the display's framerate. 
+This is essentially VSync. This mode is guaranteed to be supported on all platforms. 
+- VSync, short for vertical synchronization, is a graphics technology designed to sync a game’s frame rate with the refresh rate of a gaming monitor.
+
+
+## Render
+
+
+- The GetCurrentTextureView function will wait for the surface to provide a new 
+TextureView that we will render to.
+
+```go
+nextTexture, err := s.swapChain.GetCurrentTextureView()
+if err != nil {
+  return err
+}
+defer nextTexture.Release()
+```
+
+
+- We need a command encoder to send intructions to the GPU
+- Most modern graphics frameworks expect commands to be stored in a command buffer before being sent to the GPU.
+
+```go
+commandEncoder, err := s.device.CreateCommandEncoder(nil)
+if err != nil {
+  return err
+}
+defer commandEncoder.Release()
+```
+
+
+We need to use the encoder to create a RenderPass. The RenderPass has all the methods for the actual drawing
+
+```go 
+computePass := commandEncoder.BeginComputePass(nil)
+defer computePass.Release()
+```

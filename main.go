@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 
 	"github.com/go-gl/glfw/v3.3/glfw"
+	"github.com/rajveermalviya/go-webgpu/wgpu"
+	wgpuext_glfw "github.com/rajveermalviya/go-webgpu/wgpuext/glfw"
 )
 
 func init() {
@@ -23,8 +26,6 @@ func main() {
 		panic(err)
 	}
 	defer window.Destroy()
-
-	window.MakeContextCurrent()
 
 	s, err := InitState(window)
 	if err != nil {
@@ -46,10 +47,56 @@ func main() {
 }
 
 type State struct {
+	surface   *wgpu.Surface
+	swapChain *wgpu.SwapChain
+	device    *wgpu.Device
+	queue     *wgpu.Queue
+	config    *wgpu.SwapChainDescriptor
 }
 
+var forceFallbackAdapter = os.Getenv("WGPU_FORCE_FALLBACK_ADAPTER") == "1"
+
 func InitState(window *glfw.Window) (s *State, err error) {
-	return nil, nil
+	s = &State{}
+
+	instance := wgpu.CreateInstance(nil)
+	defer instance.Release()
+
+	s.surface = instance.CreateSurface(wgpuext_glfw.GetSurfaceDescriptor(window))
+
+	adapter, err := instance.RequestAdapter(&wgpu.RequestAdapterOptions{
+		ForceFallbackAdapter: forceFallbackAdapter,
+		CompatibleSurface:    s.surface,
+	})
+	if err != nil {
+		return s, err
+	}
+	defer adapter.Release()
+
+	s.device, err = adapter.RequestDevice(nil)
+	if err != nil {
+		return s, err
+	}
+	s.queue = s.device.GetQueue()
+
+	caps := s.surface.GetCapabilities(adapter)
+
+	width, height := window.GetSize()
+	s.config = &wgpu.SwapChainDescriptor{
+		Usage:       wgpu.TextureUsage_RenderAttachment,
+		Format:      caps.Formats[0],
+		Width:       uint32(width),
+		Height:      uint32(height),
+		PresentMode: wgpu.PresentMode_Fifo,
+		AlphaMode:   caps.AlphaModes[0],
+	}
+
+	s.swapChain, err = s.device.CreateSwapChain(s.surface, s.config)
+	if err != nil {
+		return s, err
+	}
+
+	return s, nil
 }
 
 func (s *State) Resize(width, height int) {
@@ -57,9 +104,49 @@ func (s *State) Resize(width, height int) {
 }
 
 func (s *State) Render() error {
+	nextTexture, err := s.swapChain.GetCurrentTextureView()
+	if err != nil {
+		return err
+	}
+	defer nextTexture.Release()
+	commandEncoder, err := s.device.CreateCommandEncoder(nil)
+	if err != nil {
+		return err
+	}
+	defer commandEncoder.Release()
+
+	computePass := commandEncoder.BeginComputePass(nil)
+	defer computePass.Release()
+
+	cmdBuffer, err := commandEncoder.Finish(nil)
+	if err != nil {
+		return err
+	}
+	defer cmdBuffer.Release()
+
+	s.queue.Submit(cmdBuffer)
+	s.swapChain.Present()
 	return nil
 }
 
 func (s *State) Destroy() {
-
+	if s.swapChain != nil {
+		s.swapChain.Release()
+		s.swapChain = nil
+	}
+	if s.config != nil {
+		s.config = nil
+	}
+	if s.queue != nil {
+		s.queue.Release()
+		s.queue = nil
+	}
+	if s.device != nil {
+		s.device.Release()
+		s.device = nil
+	}
+	if s.surface != nil {
+		s.surface.Release()
+		s.surface = nil
+	}
 }
