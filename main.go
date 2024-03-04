@@ -13,6 +13,23 @@ import (
 	wgpuext_glfw "github.com/rajveermalviya/go-webgpu/wgpuext/glfw"
 )
 
+const GRID_SIZE = 128 // creates a GRID_SIZE x GRID_SIZE grid
+
+type State struct {
+	instance      *wgpu.Instance
+	surface       *wgpu.Surface
+	swapChain     *wgpu.SwapChain
+	device        *wgpu.Device
+	queue         *wgpu.Queue
+	config        *wgpu.SwapChainDescriptor
+	pipeline      *wgpu.RenderPipeline
+	vertexBuffer  *wgpu.Buffer
+	gridBuffer    *wgpu.Buffer
+	vertices      []float32
+	grid          []float32
+	gridBindGroup *wgpu.BindGroup
+}
+
 func init() {
 	runtime.LockOSThread()
 }
@@ -65,18 +82,6 @@ func main() {
 	}
 }
 
-type State struct {
-	instance     *wgpu.Instance
-	surface      *wgpu.Surface
-	swapChain    *wgpu.SwapChain
-	device       *wgpu.Device
-	queue        *wgpu.Queue
-	config       *wgpu.SwapChainDescriptor
-	pipeline     *wgpu.RenderPipeline
-	vertexBuffer *wgpu.Buffer
-	vertices     []float32
-}
-
 var forceFallbackAdapter = os.Getenv("WGPU_FORCE_FALLBACK_ADAPTER") == "1"
 
 //go:embed draw.wgsl
@@ -124,7 +129,7 @@ func InitState(window *glfw.Window) (s *State, err error) {
 		return s, err
 	}
 
-	vertexData := [...]float32{
+	v := [...]float32{
 		// X, Y,
 		-0.8, -0.8, // Triangle 1
 		0.8, -0.8,
@@ -133,11 +138,12 @@ func InitState(window *glfw.Window) (s *State, err error) {
 		0.8, 0.8,
 		-0.8, 0.8,
 	}
-	s.vertices = vertexData[:]
+
+	s.vertices = v[:]
 
 	vertexBuffer, err := s.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
 		Label:    "Cell Vertices",
-		Contents: wgpu.ToBytes(vertexData[:]),
+		Contents: wgpu.ToBytes(s.vertices[:]),
 		Usage:    wgpu.BufferUsage_Vertex | wgpu.BufferUsage_CopyDst,
 	})
 	if err != nil {
@@ -145,16 +151,20 @@ func InitState(window *glfw.Window) (s *State, err error) {
 	}
 	s.vertexBuffer = vertexBuffer
 
-	drawShader, err := s.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label: "draw.wgsl",
-		WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{
-			Code: draw,
-		},
+	s.grid = []float32{GRID_SIZE, GRID_SIZE}
+	// for x := range s.grid {
+	// s.grid[x] = 1
+	// }
+
+	gridBuffer, err := s.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label:    "grid",
+		Contents: wgpu.ToBytes(s.grid[:][:]),
+		Usage:    wgpu.BufferUsage_Uniform | wgpu.BufferUsage_CopyDst,
 	})
 	if err != nil {
 		return s, err
 	}
-	defer drawShader.Release()
+	s.gridBuffer = gridBuffer
 
 	bufferLayouts := []wgpu.VertexBufferLayout{
 		{
@@ -169,25 +179,39 @@ func InitState(window *glfw.Window) (s *State, err error) {
 			},
 		},
 	}
+	s.queue.WriteBuffer(s.gridBuffer, 0, wgpu.ToBytes(s.grid[:]))
+
 	renderPipelineLayout, err := s.device.CreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
-		Label: "Render Pipeline Layout",
+		Label:            "Render Pipeline Layout",
+		BindGroupLayouts: []*wgpu.BindGroupLayout{},
 	})
 	if err != nil {
 		return s, err
 	}
 	defer renderPipelineLayout.Release()
 
-	s.pipeline, err = s.device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
-		Label:  "Render Pipeline",
-		Layout: renderPipelineLayout,
+	drawShader, err := s.device.CreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: "draw.wgsl",
+		WGSLDescriptor: &wgpu.ShaderModuleWGSLDescriptor{
+			Code: draw,
+		},
+	})
+	if err != nil {
+		return s, err
+	}
+	defer drawShader.Release()
+
+	pipeline, err := s.device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "Render Pipeline",
+		// Layout: renderPipelineLayout,
 		Vertex: wgpu.VertexState{
 			Module:     drawShader,
-			EntryPoint: "vertexMain",
+			EntryPoint: "main_vs",
 			Buffers:    bufferLayouts,
 		},
 		Fragment: &wgpu.FragmentState{
 			Module:     drawShader,
-			EntryPoint: "fragmentMain",
+			EntryPoint: "main_fs",
 			Targets: []wgpu.ColorTargetState{
 				{
 					Format:    s.config.Format,
@@ -211,7 +235,29 @@ func InitState(window *glfw.Window) (s *State, err error) {
 		return s, err
 	}
 
-	return s, nil
+	s.pipeline = pipeline
+
+	bindGroupLayout := s.pipeline.GetBindGroupLayout(0)
+	defer bindGroupLayout.Release()
+
+	bindGroup, err := s.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: bindGroupLayout,
+		Label:  "grid bind group",
+		Entries: []wgpu.BindGroupEntry{
+			{
+				Binding: 0,
+				Buffer:  s.gridBuffer,
+				Size:    wgpu.WholeSize,
+			},
+		},
+	})
+	if err != nil {
+		return s, err
+	}
+
+	s.gridBindGroup = bindGroup
+
+	return s, err
 }
 
 func (s *State) Resize(width, height int) {
@@ -230,6 +276,19 @@ func (s *State) Resize(width, height int) {
 	}
 }
 
+func attachColourToView(view *wgpu.TextureView) wgpu.RenderPassColorAttachment {
+	return wgpu.RenderPassColorAttachment{
+		View:    view,
+		LoadOp:  wgpu.LoadOp_Clear,
+		StoreOp: wgpu.StoreOp_Store,
+		ClearValue: wgpu.Color{
+			R: 0.0,
+			G: 0.01,
+			B: 0.05,
+			A: 1.0,
+		}}
+}
+
 func (s *State) Render() error {
 	nextTexture, err := s.swapChain.GetCurrentTextureView()
 	if err != nil {
@@ -242,25 +301,14 @@ func (s *State) Render() error {
 	}
 	defer commandEncoder.Release()
 	renderPass := commandEncoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
-		ColorAttachments: []wgpu.RenderPassColorAttachment{
-			{
-				View:    nextTexture,
-				LoadOp:  wgpu.LoadOp_Clear,
-				StoreOp: wgpu.StoreOp_Store,
-				ClearValue: wgpu.Color{
-					R: 0.0,
-					G: 0.01,
-					B: 0.05,
-					A: 1.0,
-				},
-			},
-		},
+		ColorAttachments: []wgpu.RenderPassColorAttachment{attachColourToView(nextTexture)},
 	})
 	defer renderPass.Release()
 
 	renderPass.SetPipeline(s.pipeline)
 	renderPass.SetVertexBuffer(0, s.vertexBuffer, 0, wgpu.WholeSize)
-	renderPass.Draw(6, 1, 0, 0)
+	renderPass.SetBindGroup(0, s.gridBindGroup, nil)
+	renderPass.Draw(6, GRID_SIZE*GRID_SIZE, 0, 0)
 
 	renderPass.End()
 

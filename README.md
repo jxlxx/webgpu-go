@@ -595,6 +595,59 @@ renderPass.Draw(6, 1, 0, 0)
 renderPass.End()
 ```
 
+# Creating a Grid
+
+set a grid size:
+
+```go
+const GRID_SIZE = 4;
+```
+
+First, you need to communicate the grid size you've chosen to the shader, 
+since it uses that to change how things display. You could just hard-code 
+the size into the shader, but then that means that any time you want to 
+change the grid size you have to re-create the shader and render pipeline, 
+which is expensive. A better way is to provide the grid size to the shader 
+as uniforms.
+
+You learned earlier that a different value from the vertex buffer is passed 
+to every invocation of a vertex shader. A uniform is a value from a buffer 
+that is the same for every invocation. They're useful for communicating 
+values that are common for a piece of geometry (like its position), a full 
+frame of animation (like the current time), or even the entire lifespan of 
+the app (like a user preference).
+
+```go
+gridData := [GRID_SIZE][GRID_SIZE]uint32{}
+s.grid = gridData
+
+gridBuffer, err := s.device.CreateBufferInit(&wgpu.BufferInitDescriptor{
+  Label:    "Grid",
+  Contents: wgpu.ToBytes(gridData[:]),
+  Usage:    wgpu.BufferUsage_Uniform | wgpu.BufferUsage_CopyDst,
+})
+if err != nil {
+  return s, err
+}
+s.gridBuffer = gridBuffer
+```
+
+
+```glsl
+@group(0) @binding(0) var<uniform> grid: vec2f;
+
+@vertex
+fn vertexMain(@location(0) pos: vec2f) ->
+  @builtin(position) vec4f {
+  return vec4f(pos / grid, 0, 1);
+}
+
+// ...fragmentMain is unchanged 
+```
+
+Declaring the uniform in the shader doesn't connect it with the buffer that you 
+created, though. In order to do that, you need to create and set a bind group.
+
 
 # Appendix 
 
